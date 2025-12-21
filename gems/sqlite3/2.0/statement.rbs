@@ -1,0 +1,5 @@
+module SQLite3
+  module Statement
+    # TODO: type more ...
+  end
+end

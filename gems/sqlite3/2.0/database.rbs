@@ -1,20 +1,566 @@
 module SQLite3
-  type row_value_type = String | Integer | Float | nil
-  type result_as_hash = Hash[String, row_value_type]
-  type result_as_array = Array[row_value_type]
-
-  class Database[ResultType]
+  # Database class encapsulates a single connection to a SQLite3 database.
+  # It provides methods for executing queries, managing transactions, creating custom functions,
+  # loading extensions, and other database operations. The class includes type translation services
+  # where SQLite3 data types (represented as strings) are converted to appropriate Ruby types.
+  #
+  # Example:
+  #   SQLite3::Database.new("data.db") do |db|
+  #     db.execute("select * from table") do |row|
+  #       p row
+  #     end
+  #   end
+  #
+  # Thread Safety: When SQLite3.threadsafe? returns true, Database instances can be safely
+  # shared among threads without additional locking.
+  class Database
+    # Include the Pragmas module for access to various pragma convenience methods
     include Pragmas
 
-    def self.new: (String file, results_as_hash: true, **untyped) ?{ (Database[result_as_hash]) -> void } -> Database[result_as_hash]
-                | (String file, results_as_hash: false, **untyped) ?{ (Database[result_as_array]) -> void } -> Database[result_as_array]
-                | (String file, **untyped) ?{ (Database[result_as_array]) -> void } -> Database[result_as_array]
+    # A boolean that indicates whether rows in result sets should be returned as hashes
+    # (true) or arrays (false). Default is false.
+    # When true, rows are returned as hashes with column names as keys.
+    # When false, rows are returned as arrays in column order.
+    attr_accessor results_as_hash: bool?
 
-    def execute: (String sql, *untyped) -> Array[ResultType]
-               | (String sql, *untyped) { (ResultType) -> void } -> void
+    # Interface for objects that can specify SQLite extensions.
+    # Implementing classes must provide a to_path method that returns the filesystem path
+    # to the extension file as a String.
+    interface _ExtensionSpecifier
+      # Returns the filesystem path to the SQLite extension as a String
+      def to_path: () -> String
+    end
 
-    def get_first_row: (String sql, *untyped) -> ResultType?
+    # Creates a new Database object that opens the given file.
+    #
+    # @param file [String] The database file path. Use ":memory:" for an in-memory database.
+    # @param readonly [bool] If true, opens the database in READONLY mode. Cannot be combined with readwrite or flags.
+    # @param readwrite [bool] If true, opens the database in READWRITE mode. Cannot be combined with readonly or flags.
+    # @param flags [Integer] Combination of SQLite3::Constants::Open flags. Cannot be combined with readonly/readwrite.
+    # @param utf16 [bool] Indicates if the filename's encoding is UTF-16 (only needed if not UTF_16LE/BE)
+    # @param strict [bool] If true, disallows double-quoted string literals
+    # @param results_as_hash [bool] If true, return rows as hashes instead of arrays
+    # @param default_transaction_mode [:deferred | :immediate | :exclusive] Default transaction mode
+    # @param extensions [Array[String | _ExtensionSpecifier]] SQLite extensions to load via the constructor
+    # @yield [db] Optional block that receives the database instance. The database is closed when the block exits.
+    # @yieldparam db [Database] The database instance
+    # @return [Database] The database instance (or block result if block given)
+    #
+    # Permissions options (mutually exclusive):
+    # - Default mode: READWRITE | CREATE
+    # - readonly: true - READONLY mode
+    # - readwrite: true - READWRITE mode
+    # - flags: Integer - Custom combination of SQLite3::Constants::Open flags
+    def self.new: (
+                    String file,
+                    ?readonly: bool,
+                    ?readwrite: bool,
+                    ?flags: Integer,
+                    ?utf16: bool,
+                    ?strict: bool,
+                    ?results_as_hash: bool,
+                    ?default_transaction_mode: (:deferred | :immediate | :exclusive),
+                    ?extensions: Array[String | _ExtensionSpecifier]
+                  )
+                  ?{ (Database db) -> void }
+                  -> Database
 
+    # Opens a database and yields it to a block, then closes it when done.
+    # Without a block, works exactly like new. With a block, returns the
+    # result of the block instead of the database instance.
+    #
+    # @param file [String] The database file path
+    # @param readonly [bool] If true, opens in READONLY mode
+    # @param readwrite [bool] If true, opens in READWRITE mode
+    # @param flags [Integer] Custom SQLite3 open flags
+    # @param utf16 [bool] UTF-16 encoding flag
+    # @param strict [bool] Strict mode flag
+    # @param results_as_hash [bool] Return rows as hashes
+    # @param default_transaction_mode [:deferred | :immediate | :exclusive] Default transaction mode
+    # @param extensions [Array[String | _ExtensionSpecifier]] Extensions to load
+    # @yield [database] Block that receives the database instance
+    # @yieldparam database [Database] The database instance
+    # @return [R] The result of the block if block given, otherwise the Database instance
+    def self.open: [R]
+                   (
+                     String file,
+                     ?readonly: bool,
+                     ?readwrite: bool,
+                     ?flags: Integer,
+                     ?utf16: bool,
+                     ?strict: bool,
+                     ?results_as_hash: bool,
+                     ?default_transaction_mode: (:deferred | :immediate | :exclusive),
+                     ?extensions: Array[String | _ExtensionSpecifier]
+                   )
+                   { (Database db) -> R }
+                   -> R
+                 | (
+                     String file,
+                     ?readonly: bool,
+                     ?readwrite: bool,
+                     ?flags: Integer,
+                     ?utf16: bool,
+                     ?strict: bool,
+                     ?results_as_hash: bool,
+                     ?default_transaction_mode: (:deferred | :immediate | :exclusive),
+                     ?extensions: Array[String | _ExtensionSpecifier]
+                   )
+                   -> Database
+
+    # Quotes a string, making it safe to use in an SQL statement.
+    # Replaces all single-quote characters with two single-quote characters.
+    #
+    # @param string [String] The string to quote
+    # @return [String] The quoted string safe for SQL use
+    def self.quote: (String string) -> String
+
+    # Installs or removes an authorizer block for database access control.
+    # The block will be invoked for every access to the database.
+    # If the block returns 0 or nil, the statement is allowed.
+    # If the block returns 1, an authorization error occurs.
+    # If the block returns 2, access is silently denied.
+    #
+    # @yieldparam untyped First parameter (type depends on authorization action)
+    # @yieldparam untyped Second parameter
+    # @yieldparam untyped Third parameter
+    # @yieldparam untyped Fourth parameter
+    # @yieldparam untyped Fifth parameter
+    # @yieldreturn [Integer] 0 to allow, 1 to deny with error, 2 to silently deny
+    # @return [void]
+    def authorizer: () ?{ (untyped, untyped, untyped, untyped, untyped) -> Integer? } -> void
+
+    # Interface for authorizer objects that respond to call with 5 arguments
+    interface _Authorizer
+      # Authorizer callback invoked for database access
+      # @return [Integer] 0 to allow, 1 to deny with error, 2 to silently deny
+      def call: (untyped, untyped, untyped, untyped, untyped) -> Integer?
+    end
+
+    # Sets the authorizer for this database. The authorizer must respond to
+    # call with 5 parameters. If the authorizer returns 0 or true, access is allowed.
+    # If it returns 1 or false, an authorization error occurs.
+    # If it returns 2 or nil, access is silently denied.
+    #
+    # @param authorizer [_Authorizer?] The authorizer object or nil to remove
+    # @return [void]
+    def authorizer=: (_Authorizer? authorizer) -> void
+
+    # Registers a busy handler that is invoked when a requested resource is busy.
+    # If the handler returns false, the operation is aborted. Otherwise, the
+    # resource is requested again. Mutually exclusive with busy_timeout.
+    #
+    # @yieldparam count [Integer] Number of times the resource has been retried
+    # @yieldreturn [boolish] false to abort, true to retry
+    # @return [void]
+    def busy_handler: () ?{ (Integer count) -> boolish } -> void
+
+    # Sets a busy_handler that releases the GVL between retries, but only retries
+    # up to the indicated number of milliseconds. Alternative to busy_timeout.
+    #
+    # @param milliseconds [Integer] Timeout duration in milliseconds
+    # @return [void]
+    def busy_handler_timeout=: (Integer milliseconds) -> void
+
+    # @return [void]
+    def busy_timeout=: (Integer) -> void
+
+    # Override Pragmas#busy_timeout to make it an alias for busy_timeout=
+    alias busy_timeout busy_timeout=
+
+    # Returns the number of changes made by the last operation.
+    # Note: A "delete from table" without a where clause does not affect this value.
+    #
+    # @return [Integer] Number of changes
     def changes: () -> Integer
+
+    # Closes the database and releases all associated resources.
+    # ⚠️ Writable connections across fork() are not completely closed to avoid corruption.
+    #
+    # @return [void]
+    def close: () -> void
+
+    # Returns true if this database instance has been closed.
+    #
+    # @return [bool] True if closed
+    def closed?: () -> bool
+
+    # Interface for comparator objects used in custom collations
+    interface _Comparator
+      # Compares two strings, returning -1, 0, or 1
+      # @param [String] First string
+      # @param [String] Second string
+      # @return [Integer] Negative if a < b, zero if a == b, positive if a > b
+      def compare: (String, String) -> Integer
+    end
+
+    # Adds a collation with the given name and comparator object.
+    # The comparator must implement a compare method taking two strings and
+    # returning an integer less than, equal to, or greater than 0.
+    #
+    # @param name [String] Name of the collation
+    # @param comparator [_Comparator?] Comparator object or nil to remove
+    # @return [void]
+    def collation: (String name, _Comparator? comparator) -> void
+
+    # Commits the current transaction. Raises an error if no transaction active.
+    # Returns true to allow idioms like: abort? and rollback or commit
+    #
+    # @return [true] Always returns true
+    def commit: () -> true
+
+    # Returns true if the string is a valid (parsable) SQL statement.
+    #
+    # @param sql [String] The SQL statement to check
+    # @return [bool] True if valid SQL
+    def complete?: (String sql) -> bool
+
+    # Proxy object used in aggregate functions to store state and results
+    class FunctionProxy
+      # The result value of the function
+      attr_accessor result: untyped
+
+      # Gets a value from the function's context using the given key
+      def []: (untyped key) -> untyped
+
+      # Sets a value in the function's context using the given key
+      def []=: (untyped key, untyped value) -> untyped
+    end
+
+    # Interface for aggregate function contexts
+    interface _AggregateContext
+      # Called for each row in the aggregate function's evaluation
+      def step: () { (FunctionProxy func, *untyped) -> void } -> void
+
+      # Called to finalize the aggregate function's evaluation and produce the result
+      def finalize: () { (FunctionProxy func) -> void } -> void
+    end
+
+    # Creates a new aggregate function for use in SQL statements.
+    # Aggregate functions operate over every row in the result set.
+    #
+    # @param name [String] Name of the aggregate function
+    # @param arity [Integer] Number of arguments (-1 for variable arity)
+    # @param step [^(FunctionProxy, *untyped) -> void] Proc called for each row
+    # @param finalize [^(FunctionProxy) -> void] Proc called to finalize the result
+    # @param text_rep [Integer] Text representation flags (default Constants::TextRep::ANY)
+    # @yield DSL block to define step and finalize methods
+    # @return [void]
+    #
+    # Example:
+    #   db.create_aggregate("lengths", 1) do
+    #     step do |func, value|
+    #       func[:total] ||= 0
+    #       func[:total] += (value ? value.length : 0)
+    #     end
+    #
+    #     finalize do |func|
+    #       func.result = func[:total] || 0
+    #     end
+    #   end
+    def create_aggregate: (
+                            String name,
+                            Integer arity,
+                            ?nil step,
+                            ?nil finalize,
+                            ?Integer text_rep
+                          )
+                          { () [self: _AggregateContext] -> void }
+                          -> void
+                        | (
+                            String name,
+                            Integer arity,
+                            (^(FunctionProxy, *untyped) -> void) step,
+                            (^(FunctionProxy) -> void) finalize,
+                            ?Integer text_rep
+                          )
+                          -> void
+
+    # Interface for aggregate handler factories
+    interface _AggregateHandler
+      # Returns the name of the aggregate function (required)
+      def name: () -> String
+
+      # Returns the arity of the function (optional, nil means variable arity)
+      def arity: () -> Integer?
+
+      # Returns a new instance for handling a specific function invocation (required)
+      def new: () -> _AggregateContext
+    end
+
+    # Creates an aggregate function using a factory object (handler) approach.
+    # The handler must implement name, arity, and new methods.
+    # The handler instance must implement step and finalize methods.
+    #
+    # @param handler [_AggregateHandler] Factory object for creating aggregate functions
+    # @return [void]
+    #
+    # Example:
+    #   class LengthsAggregateHandler
+    #     def self.arity; 1; end
+    #     def self.name; 'lengths'; end
+    #
+    #     def initialize
+    #       @total = 0
+    #     end
+    #
+    #     def step(ctx, name)
+    #       @total += (name ? name.length : 0)
+    #     end
+    #
+    #     def finalize(ctx)
+    #       ctx.result = @total
+    #     end
+    #   end
+    #   db.create_aggregate_handler(LengthsAggregateHandler)
+    def create_aggregate_handler: (_AggregateHandler handler) -> void
+
+    # Creates a new function for use in SQL statements.
+    # The block receives a FunctionProxy and function arguments, and should
+    # set the result via FunctionProxy#result=.
+    #
+    # @param name [String] Function name
+    # @param arity [Integer] Number of arguments (-1 for variable arity)
+    # @param text_rep [Integer] Text representation flags (default UTF8)
+    # @yieldparam func [FunctionProxy] Proxy object for setting the function result
+    # @yieldparam *untyped Function arguments
+    # @return [void]
+    #
+    # Example:
+    #   db.create_function("maim", 1) do |func, value|
+    #     func.result = value ? value.split(//).sort.join : nil
+    #   end
+    def create_function: (String name, Integer arity, ?Integer text_rep)
+                         { (FunctionProxy func, *untyped) -> void }
+                         -> void
+
+    # Defines an aggregate function using an object template approach.
+    # The aggregator must respond to step, finalize, and clone.
+    #
+    # @param name [String] Name of the aggregator
+    # @param aggregator [_AggregateContext] Template object with step/finalize methods
+    # @return [void]
+    def define_aggregator: (String name, _AggregateContext aggregator) -> void
+
+    # Define a function with the given name. The block's arity determines the function's arity.
+    # The block should return the function's result directly.
+    #
+    # @param name [String] Function name
+    # @yield [*untyped] Function arguments
+    # @yieldreturn [untyped] Function result
+    # @return [void]
+    def define_function: (String name) { (*untyped) -> untyped } -> void
+
+    # Define a function with TextRep bitflags. The block's arity determines the function's arity.
+    # The block should return the function's result directly.
+    #
+    # @param name [String] Function name
+    # @param flags [Integer] Text representation flags
+    # @yield [*untyped] Function arguments
+    # @yieldreturn [untyped] Function result
+    # @return [void]
+    def define_function_with_flags: (String name, Integer flags) { (*untyped) -> untyped } -> void
+
+    # Enable or disable SQLite extension loading.
+    # Must be called before load_extension.
+    #
+    # @param enabled [bool] Whether to enable extension loading
+    # @return [void]
+    def enable_load_extension: (bool enabled) -> void
+
+    # Fetches the encoding set on this database.
+    # Overrides Pragmas#encoding to return an Encoding object.
+    #
+    # @return [Encoding] The database encoding
+    def encoding: () -> Encoding
+
+    # Returns an integer representing the last error code.
+    #
+    # @return [Integer] Error code
+    def errcode: () -> Integer
+
+    # Returns a string describing the last error.
+    #
+    # @return [String] Error message
+    def errmsg: () -> String
+
+    # Executes the given SQL statement with optional bind variables.
+    # If a block is given, yields each row. Otherwise returns all results as an array.
+    # Bind variables can be provided as an array or as hash parameters.
+    #
+    # @param sql [String] SQL statement to execute
+    # @param bind_vars [Array[row_value_type]] Bind variables for placeholders
+    # @yieldparam row [result_type] Each result row (Hash or Array)
+    # @return [void] When block given
+    # @return [results_type] All results when no block given
+    #
+    # Example:
+    #   db.execute("SELECT * FROM users")
+    #   db.execute("SELECT * FROM users WHERE id = ?", [1])
+    def execute: (String sql, ?Array[row_value_type] bind_vars) { (result_type row) -> void } -> void
+               | (String sql, ?Array[row_value_type] bind_vars) -> results_type
+
+    # Executes SQL like execute, but first row is always column names.
+    # Subsequent rows contain the actual data.
+    #
+    # @param sql [String] SQL statement
+    # @param *bind_vars [row_value_type] Bind variables
+    # @yieldparam columns_or_row [result_type] First yield is column names, subsequent are data rows
+    # @return [void] When block given
+    # @return [results_type] All results including column names when no block given
+    def execute2: (String sql, *row_value_type bind_vars) { (result_type columns_or_row) -> void } -> void
+                | (String sql, *row_value_type bind_vars) -> results_type
+
+    # Executes all SQL statements in the given string (multiple statements).
+    # By contrast, execute only runs the first statement. Uses same bind variables
+    # for each statement. Returns the result of the last statement.
+    #
+    # @param sql [String] SQL statements separated by semicolons
+    # @param bind_vars [Array[row_value_type]] Bind variables applied to each statement
+    # @return [void]
+    #
+    # Example:
+    #   db.execute_batch("INSERT INTO a VALUES (1); INSERT INTO a VALUES (2)")
+    def execute_batch: (String sql, ?Array[row_value_type] bind_vars) -> void
+
+    # Executes all SQL statements in the given string and returns all values as strings.
+    # A block can be passed to parse values. Does not support bind parameters.
+    #
+    # @param sql [String] SQL statements
+    # @yieldparam row [result_type] Each result row
+    # @return [Array[T]] Transformed results when block given
+    # @return [results_type] All results as strings when no block given
+    def execute_batch2: [T] (String sql) { (result_type row) -> T } -> Array[T]
+                      | (String sql) -> results_type
+
+    # Enable or disable extended result codes in SQLite.
+    # Extended codes provide more detailed error information.
+    #
+    # @param enabled [bool] Whether to enable extended result codes
+    # @return [void]
+    def extended_result_codes=: (bool enabled) -> void
+
+    # Returns the filename for the specified database name.
+    #
+    # @param db_name [String?] Database name, defaults to "main"
+    # @return [String?] Filename or nil/empty string for in-memory/temp databases
+    def filename: (?String db_name) -> String?
+
+    # Returns the first row of the result set, discarding all others.
+    # Identical to execute but only returns the first row.
+    #
+    # @param sql [String] SQL statement
+    # @param *bind_vars [row_value_type] Bind variables
+    # @return [result_type] First row as Hash or Array
+    def get_first_row: (String sql, *row_value_type bind_vars) -> result_type
+
+    # Returns the first value of the first row, discarding all other data.
+    # Identical to execute but only returns the single value.
+    #
+    # @param sql [String] SQL statement
+    # @param *bind_vars [row_value_type] Bind variables
+    # @return [row_value_type] First value or nil
+    def get_first_value: (String sql, *row_value_type bind_vars) -> row_value_type
+
+    # Interrupts the currently executing operation, causing it to abort.
+    #
+    # @return [void]
+    def interrupt: () -> void
+
+    # Returns the unique row ID of the last inserted row.
+    #
+    # @return [Integer] Row ID
+    def last_insert_row_id: () -> Integer
+
+    # Loads a SQLite extension library from the named file.
+    # Extension loading must be enabled via enable_load_extension first.
+    #
+    # @param extension_specifier [String | _ExtensionSpecifier] Filesystem path or object responding to to_path
+    # @return [void]
+    #
+    # Example:
+    #   db.enable_load_extension(true)
+    #   db.load_extension("/path/to/extension.so")
+    #   db.load_extension(SQLean::Crypto)
+    def load_extension: ((String | _ExtensionSpecifier) extension_specifier) -> void
+
+    # Returns a Statement object for the given SQL without executing it.
+    # The Statement can then be executed via Statement#execute.
+    #
+    # @param sql [String] SQL statement to prepare
+    # @yield [stmt] Optional block receiving the statement
+    # @yieldparam stmt [Statement] The prepared statement
+    # @return [Statement] The prepared statement (yields and closes if block given)
+    def prepare: [R] (String sql) { (Statement stmt) -> R } -> R
+               | (String sql) -> Statement
+
+    # Convenience method to prepare, bind, and execute in one step.
+    # The result set must be closed via close, or use a block for automatic closing.
+    #
+    # @param sql [String] SQL statement
+    # @param bind_vars [Array[row_value_type]] Bind variables
+    # @yield [result] Optional block receiving the result set
+    # @yieldparam result [ResultSet] Query results
+    # @return [R] Block result if block given
+    # @return [ResultSet] Result set if no block given
+    #
+    # Example:
+    #   db.query("SELECT * FROM users WHERE id = ?", [1]) do |result|
+    #     # process result
+    #   end
+    def query: [R] (String sql, ?Array[row_value_type] bind_vars) { (results_type rows) -> R } -> R
+             | (String sql, ?Array[row_value_type] bind_vars) -> results_type
+
+    # Returns true if the database was opened in readonly mode.
+    #
+    # @return [bool] True if readonly
+    def readonly?: () -> bool
+
+    # Rolls back the current transaction. Raises an error if no transaction active.
+    # Returns true to allow idioms like: abort? and rollback or commit
+    #
+    # @return [true] Always returns true
+    def rollback: () -> true
+
+    # Sets a timeout for queries. If a query exceeds the timeout, SQLite interrupts it.
+    # Set to 0 to disable timeout (default behavior).
+    #
+    # @param milliseconds [Integer] Timeout duration in milliseconds
+    # @return [void]
+    def statement_timeout=: (Integer milliseconds) -> void
+
+    # Returns the total number of changes made since the database was opened.
+    #
+    # @return [Integer] Total number of changes
+    def total_changes: () -> Integer
+
+    # Installs or removes a tracer block that is invoked for every SQL statement executed.
+    # The block receives the SQL statement as a parameter.
+    #
+    # @yieldparam sql [String] The executed SQL statement
+    # @return [void]
+    def trace: () ?{ (String sql) -> void } -> void
+             | (?(^(String) -> void) tracer) -> void
+
+    # Begins a new transaction. Nested transactions are not allowed by SQLite.
+    # If a block is given, the database is yielded and the transaction is automatically
+    # committed when the block exits (or rolled back if an exception occurs).
+    #
+    # @param mode [:deferred | :immediate | :exclusive] Transaction mode
+    # @yieldparam db [Database] The database instance
+    # @return [R] Block result if block given
+    # @return [true] True if no block given
+    #
+    # Example:
+    #   db.transaction do
+    #     db.execute("INSERT INTO users (name) VALUES ('John')")
+    #   end
+    def transaction: [R] (?(:deferred | :immediate | :exclusive) mode) { (Database db) -> R } -> R
+                   | (?(:deferred | :immediate | :exclusive) mode) -> true
+
+    # Returns true if a transaction is currently active.
+    #
+    # @return [bool] True if transaction active
+    def transaction_active?: () -> bool
   end
 end

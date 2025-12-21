@@ -1,0 +1,29 @@
+# SQLite3 module provides a Ruby interface to the SQLite3 embedded database engine.
+# It includes type definitions and the Database class for managing connections and executing queries.
+module SQLite3
+  # Represents the possible value types for a single row in a result set.
+  # These correspond to SQLite3's data types as translated by the Ruby driver:
+  # - String: for TEXT columns
+  # - Integer: for INTEGER columns
+  # - Float: for REAL columns
+  # - nil: for NULL values
+  type row_value_type = String | Integer | Float | nil
+
+  # Represents a result set row as a Hash where column names (String) map to their values.
+  # The value types are defined by row_value_type.
+  type result_as_hash = Hash[String, row_value_type]
+
+  # Represents a result set row as an Array of values in column order.
+  # Each value type is defined by row_value_type.
+  type result_as_array = Array[row_value_type]
+
+  # Union type representing a single result row, either as a Hash or Array.
+  # The format depends on the Database#results_as_hash setting:
+  # - Hash format when results_as_hash is true
+  # - Array format when results_as_hash is false (default)
+  type result_type = result_as_hash | result_as_array
+
+  # Represents a complete result set containing multiple rows.
+  # Each element is a result_type (Hash or Array) representing one row.
+  type results_type = Array[result_type]
+end
