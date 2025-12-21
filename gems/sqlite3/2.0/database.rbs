@@ -389,7 +389,7 @@ module SQLite3
     # Bind variables can be provided as an array or as hash parameters.
     #
     # @param sql [String] SQL statement to execute
-    # @param bind_vars [Array[bind_var_type]] Bind variables for placeholders
+    # @param bind_vars [Array[bind_var_type] | bind_var_type] Bind variables for placeholders
     # @yieldparam row [result_type] Each result row (Hash or Array)
     # @return [void] When block given
     # @return [results_type] All results when no block given
@@ -397,9 +397,10 @@ module SQLite3
     # Example:
     #   db.execute("SELECT * FROM users")
     #   db.execute("SELECT * FROM users WHERE id = ?", [1])
+    #   db.execute("SELECT * FROM users WHERE id = :id", {id: 1})
     #   db.execute("SELECT * FROM users WHERE id = :id", [{id: 1}])
-    def execute: (String sql, ?Array[bind_var_type] bind_vars) { (result_type row) -> void } -> void
-               | (String sql, ?Array[bind_var_type] bind_vars) -> results_type
+    def execute: (String sql, ?(Array[bind_var_type] | bind_var_type) bind_vars) { (result_type row) -> void } -> void
+               | (String sql, ?(Array[bind_var_type] | bind_var_type) bind_vars) -> results_type
 
     # Executes SQL like execute, but first row is always column names.
     # Subsequent rows contain the actual data.
@@ -417,13 +418,14 @@ module SQLite3
     # for each statement. Returns the result of the last statement.
     #
     # @param sql [String] SQL statements separated by semicolons
-    # @param bind_vars [Array[bind_var_type]] Bind variables applied to each statement
+    # @param bind_vars [Array[bind_var_type] | bind_var_type] Bind variables applied to each statement
     # @return [void]
     #
     # Example:
     #   db.execute_batch("INSERT INTO a VALUES (1); INSERT INTO a VALUES (2)")
+    #   db.execute_batch("INSERT INTO users VALUES (:id, :name)", {id: 1, name: "John"})
     #   db.execute_batch("INSERT INTO users VALUES (:id, :name)", [{id: 1, name: "John"}])
-    def execute_batch: (String sql, ?Array[bind_var_type] bind_vars) -> void
+    def execute_batch: (String sql, ?(Array[bind_var_type] | bind_var_type) bind_vars) -> void
 
     # Executes all SQL statements in the given string and returns all values as strings.
     # A block can be passed to parse values. Does not support bind parameters.
@@ -500,7 +502,7 @@ module SQLite3
     # The result set must be closed via close, or use a block for automatic closing.
     #
     # @param sql [String] SQL statement
-    # @param bind_vars [Array[bind_var_type]] Bind variables
+    # @param bind_vars [Array[bind_var_type] | bind_var_type] Bind variables
     # @yield [result] Optional block receiving the result set
     # @yieldparam result [ResultSet] Query results
     # @return [R] Block result if block given
@@ -510,11 +512,14 @@ module SQLite3
     #   db.query("SELECT * FROM users WHERE id = ?", [1]) do |result|
     #     # process result
     #   end
+    #   db.query("SELECT * FROM users WHERE id = :id", {id: 1}) do |result|
+    #     # process result
+    #   end
     #   db.query("SELECT * FROM users WHERE id = :id", [{id: 1}]) do |result|
     #     # process result
     #   end
-    def query: [R] (String sql, ?Array[bind_var_type] bind_vars) { (results_type rows) -> R } -> R
-             | (String sql, ?Array[bind_var_type] bind_vars) -> results_type
+    def query: [R] (String sql, ?(Array[bind_var_type] | bind_var_type) bind_vars) { (results_type rows) -> R } -> R
+             | (String sql, ?(Array[bind_var_type] | bind_var_type) bind_vars) -> results_type
 
     # Returns true if the database was opened in readonly mode.
     #

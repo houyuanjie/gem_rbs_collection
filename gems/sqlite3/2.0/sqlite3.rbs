@@ -31,5 +31,5 @@ module SQLite3
   # These can be:
   # - Basic types: String, Integer, Float, nil
   # - Hash: for named parameter binding, where keys are String or Symbol
-  type bind_var_type = String | Integer | Float | nil | Hash[String | Symbol, untyped]
+  type bind_var_type = String | Integer | Float | nil | Hash[String | Symbol, (String | Integer | Float | nil)]
 end
