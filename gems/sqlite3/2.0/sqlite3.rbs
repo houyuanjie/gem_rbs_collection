@@ -26,4 +26,10 @@ module SQLite3
   # Represents a complete result set containing multiple rows.
   # Each element is a result_type (Hash or Array) representing one row.
   type results_type = Array[result_type]
+
+  # Represents the possible types for bind variables in SQL statements.
+  # These can be:
+  # - Basic types: String, Integer, Float, nil
+  # - Hash: for named parameter binding, where keys are String or Symbol
+  type bind_var_type = String | Integer | Float | nil | Hash[String | Symbol, untyped]
 end
