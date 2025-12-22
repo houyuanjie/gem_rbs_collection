@@ -1,7 +1,351 @@
 module SQLite3
+  # This module is intended for inclusion solely by the Database class. It
+  # defines convenience methods for the various pragmas supported by SQLite3.
+  #
+  # Expected interface from including class:
+  # - get_first_value: (String sql) -> untyped
+  # - execute: (String sql) -> untyped
+  #          | (String sql) { (untyped row) -> void } -> untyped
+  # - prepare: (String sql) -> untyped
   module Pragmas
-    def busy_timeout=: (Integer) -> void
+    # The enumeration of valid auto vacuum modes.
+    AUTO_VACUUM_MODES: {
+        "none" => 0,
+        "full" => 1,
+        "incremental" => 2
+      }
 
-    # TODO: type more ...
+    # The list of valid encodings.
+    ENCODINGS: {
+        "utf-8" => "utf-8",
+        "utf-16" => "utf-16",
+        "utf-16le" => "utf-16le",
+        "utf-16be" => "utf-16be"
+      }
+
+    # The list of valid journaling modes.
+    JOURNAL_MODES: {
+        "delete" => "delete",
+        "truncate" => "truncate",
+        "persist" => "persist",
+        "memory" => "memory",
+        "wal" => "wal",
+        "off" => "off"
+      }
+
+    # The list of valid locking modes.
+    LOCKING_MODES: {
+        "normal" => "normal",
+        "exclusive" => "exclusive"
+      }
+
+    # The enumeration of valid synchronous modes.
+    SYNCHRONOUS_MODES: {
+        "full" => 2,
+        "normal" => 1,
+        "off" => 0
+      }
+
+    # The enumeration of valid temp store modes.
+    TEMP_STORE_MODES: {
+        "default" => 0,
+        "file" => 1,
+        "memory" => 2
+      }
+
+    # The list of valid WAL checkpoints.
+    WAL_CHECKPOINTS: {
+        "passive" => "passive",
+        "full" => "full",
+        "restart" => "restart",
+        "truncate" => "truncate"
+      }
+
+    # Returns +true+ or +false+ depending on the value of the named pragma.
+    def get_boolean_pragma: (String name) -> bool
+
+    # Sets the given pragma to the given boolean value. The value itself
+    # may be +true+ or +false+, or any other commonly used string or
+    # integer that represents truth.
+    def set_boolean_pragma: (String name, (String | bool | Integer | nil) mode) -> void
+
+    # Requests the given pragma (and parameters), and if the block is given,
+    # each row of the result set will be yielded to it. Otherwise, the results
+    # are returned as an array.
+    def get_query_pragma: (String name, *row_value_type params) { (result_type row) -> void } -> void
+                        | (String name, *row_value_type params) -> results_type
+
+    # Return the value of the given pragma.
+    def get_enum_pragma: (String name) -> String
+
+    # Set the value of the given pragma to +mode+. The +mode+ parameter must
+    # conform to one of the values in the given +enum+ array. Each entry in
+    # the array is another array comprised of elements in the enumeration that
+    # have duplicate values. See #synchronous, #default_synchronous,
+    # #temp_store, and #default_temp_store for usage examples.
+    def set_enum_pragma: (String name, (String | Integer) mode, ::Hash[String, (Integer | String)] enums) -> void
+
+    # Returns the value of the given pragma as an integer.
+    def get_int_pragma: (String name) -> Integer
+
+    # Set the value of the given pragma to the integer value of the +value+
+    # parameter.
+    def set_int_pragma: (String name, Integer value) -> void
+
+    # Public pragma accessor methods
+
+    # Application ID that can be set by applications for their own use.
+    def application_id: () -> Integer
+    def application_id=: (Integer integer) -> void
+
+    # The auto vacuum mode.
+    def auto_vacuum: () -> String
+    def auto_vacuum=: (String mode) -> void
+
+    # The status of automatic indexing.
+    def automatic_index: () -> bool
+    def automatic_index=: ((String | bool | Integer | nil) mode) -> void
+
+    # The busy timeout duration in milliseconds.
+    def busy_timeout: () -> Integer
+    def busy_timeout=: (Integer milliseconds) -> void
+
+    # The suggested maximum number of database disk pages that SQLite will
+    # hold in memory at once.
+    def cache_size: () -> Integer
+    def cache_size=: (Integer size) -> void
+
+    # The cache spill status.
+    def cache_spill: () -> bool
+    def cache_spill=: ((String | bool | Integer | nil) mode) -> void
+
+    # Sets case sensitive like.
+    def case_sensitive_like=: ((String | bool | Integer | nil) mode) -> void
+
+    # The cell size check enforcement status.
+    def cell_size_check: () -> bool
+    def cell_size_check=: ((String | bool | Integer | nil) mode) -> void
+
+    # The checkpoint fullfsync flag.
+    def checkpoint_fullfsync: () -> bool
+    def checkpoint_fullfsync=: ((String | bool | Integer | nil) mode) -> void
+
+    # Returns a list of collations.
+    def collation_list: () { (result_type row) -> void } -> void
+                      | () -> results_type
+
+    # Returns a list of compile options.
+    def compile_options: () { (result_type row) -> void } -> void
+                       | () -> results_type
+
+    # The count changes status.
+    def count_changes: () -> bool
+    def count_changes=: ((String | bool | Integer | nil) mode) -> void
+
+    # The user version.
+    def data_version: () -> Integer
+
+    # Returns a list of databases.
+    def database_list: () { (result_type row) -> void } -> void
+                     | () -> results_type
+
+    # The suggested cache size.
+    def default_cache_size: () -> Integer
+    def default_cache_size=: (Integer size) -> void
+
+    # The default synchronous setting.
+    def default_synchronous: () -> String
+    def default_synchronous=: (String mode) -> void
+
+    # The default temp store mode.
+    def default_temp_store: () -> String
+    def default_temp_store=: (String mode) -> void
+
+    # The defer foreign keys status.
+    def defer_foreign_keys: () -> bool
+    def defer_foreign_keys=: ((String | bool | Integer | nil) mode) -> void
+
+    # The encoding.
+    def encoding: () -> String
+    def encoding=: (String mode) -> void
+
+    # Checks foreign key constraints.
+    def foreign_key_check: (?String table) { (result_type row) -> void } -> void
+                         | (?String table) -> results_type
+
+    # Lists foreign keys for a table.
+    def foreign_key_list: (String table) { (result_type row) -> void } -> void
+                        | (String table) -> results_type
+
+    # The foreign keys status.
+    def foreign_keys: () -> bool
+    def foreign_keys=: ((String | bool | Integer | nil) mode) -> void
+
+    # Returns the number of unused pages in the database file.
+    def freelist_count: () -> Integer
+
+    # The full column names status.
+    def full_column_names: () -> bool
+    def full_column_names=: ((String | bool | Integer | nil) mode) -> void
+
+    # The full fsync flag.
+    def fullfsync: () -> bool
+    def fullfsync=: ((String | bool | Integer | nil) mode) -> void
+
+    # Sets ignore check constraints.
+    def ignore_check_constraints=: ((String | bool | Integer | nil) mode) -> void
+
+    # Performs an incremental vacuum.
+    def incremental_vacuum: (Integer pages) { (result_type row) -> void } -> void
+                          | (Integer pages) -> results_type
+
+    # Returns information about an index.
+    def index_info: (String index) { (result_type row) -> void } -> void
+                  | (String index) -> results_type
+
+    # Returns a list of indexes for a table.
+    def index_list: (String table) { (result_type row) -> void } -> void
+                  | (String table) -> results_type
+
+    # Returns extended information about an index.
+    def index_xinfo: (String index) { (result_type row) -> void } -> void
+                   | (String index) -> results_type
+
+    # Performs an integrity check.
+    def integrity_check: (*row_value_type num_errors) { (result_type row) -> void } -> void
+                       | (*row_value_type num_errors) -> results_type
+
+    # The journaling mode.
+    def journal_mode: () -> String
+    def journal_mode=: (String mode) -> void
+
+    # The journal size limit.
+    def journal_size_limit: () -> Integer
+    def journal_size_limit=: (Integer size) -> void
+
+    # The legacy file format status.
+    def legacy_file_format: () -> bool
+    def legacy_file_format=: ((String | bool | Integer | nil) mode) -> void
+
+    # The locking mode.
+    def locking_mode: () -> String
+    def locking_mode=: (String mode) -> void
+
+    # The maximum page count.
+    def max_page_count: () -> Integer
+    def max_page_count=: (Integer size) -> void
+
+    # The memory map size limit.
+    def mmap_size: () -> Integer
+    def mmap_size=: (Integer size) -> void
+
+    # Attempt to optimize the database.
+    # To customize the optimization options, pass +bitmask+ with a combination
+    # of the Constants::Optimize masks.
+    # See https://www.sqlite.org/pragma.html#pragma_optimize for more information.
+    def optimize: (?Integer? bitmask) -> void
+
+    # The page count.
+    def page_count: () -> Integer
+
+    # The page size.
+    def page_size: () -> Integer
+    def page_size=: (Integer size) -> void
+
+    # Sets parser trace.
+    def parser_trace=: ((String | bool | Integer | nil) mode) -> void
+
+    # The query only status.
+    def query_only: () -> bool
+    def query_only=: ((String | bool | Integer | nil) mode) -> void
+
+    # Performs a quick integrity check.
+    def quick_check: (*row_value_type num_errors) { (result_type row) -> void } -> void
+                   | (*row_value_type num_errors) -> results_type
+
+    # The read uncommitted status.
+    def read_uncommitted: () -> bool
+    def read_uncommitted=: ((String | bool | Integer | nil) mode) -> void
+
+    # The recursive triggers status.
+    def recursive_triggers: () -> bool
+    def recursive_triggers=: ((String | bool | Integer | nil) mode) -> void
+
+    # The reverse unordered selects status.
+    def reverse_unordered_selects: () -> bool
+    def reverse_unordered_selects=: ((String | bool | Integer | nil) mode) -> void
+
+    # The schema cookie.
+    def schema_cookie: () -> Integer
+    def schema_cookie=: (Integer cookie) -> void
+
+    # The schema version.
+    def schema_version: () -> Integer
+    def schema_version=: (Integer version) -> void
+
+    # The secure delete status.
+    def secure_delete: () -> bool
+    def secure_delete=: ((String | bool | Integer | nil) mode) -> void
+
+    # The short column names status.
+    def short_column_names: () -> bool
+    def short_column_names=: ((String | bool | Integer | nil) mode) -> void
+
+    # Shrink memory usage.
+    def shrink_memory: () -> void
+
+    # The soft heap limit.
+    def soft_heap_limit: () -> Integer
+    def soft_heap_limit=: (Integer mode) -> void
+
+    # Returns database statistics.
+    def stats: () { (result_type row) -> void } -> void
+             | () -> results_type
+
+    # The synchronous mode.
+    def synchronous: () -> String
+    def synchronous=: (String mode) -> void
+
+    # The temp store mode.
+    def temp_store: () -> String
+    def temp_store=: (String mode) -> void
+
+    # Returns information about +table+. Yields each row of table information
+    # if a block is provided.
+    def table_info: (String table) { (Hash[String, (String | Integer | nil)] new_row) -> void } -> void
+                  | (String table) -> Array[Hash[String, (String | Integer | nil)]]
+
+    # The number of worker threads.
+    def threads: () -> Integer
+    def threads=: (Integer count) -> void
+
+    # The user cookie.
+    def user_cookie: () -> Integer
+    def user_cookie=: (Integer cookie) -> void
+
+    # The user version.
+    def user_version: () -> Integer
+    def user_version=: (Integer version) -> void
+
+    # Sets vdbe op trace.
+    def vdbe_addoptrace=: ((String | bool | Integer | nil) mode) -> void
+    # Sets vdbe debug.
+    def vdbe_debug=: ((String | bool | Integer | nil) mode) -> void
+    # Sets vdbe listing.
+    def vdbe_listing=: ((String | bool | Integer | nil) mode) -> void
+    # The vdbe trace status.
+    def vdbe_trace: () -> bool
+    def vdbe_trace=: ((String | bool | Integer | nil) mode) -> void
+
+    # The WAL autocheckpoint interval.
+    def wal_autocheckpoint: () -> Integer
+    def wal_autocheckpoint=: (Integer mode) -> void
+
+    # The WAL checkpoint mode.
+    def wal_checkpoint: () -> String
+    def wal_checkpoint=: (String mode) -> void
+
+    # Sets writable schema.
+    def writable_schema=: ((String | bool | Integer | nil) mode) -> void
   end
 end
