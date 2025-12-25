@@ -1,0 +1,34 @@
+module SQLite3
+  # The ResultSet object encapsulates the enumerability of a query's output.
+  # It is a simple cursor over the data that the query returns. It will
+  # very rarely (if ever) be instantiated directly. Instead, clients should
+  # obtain a ResultSet instance via Statement#execute.
+  #
+  # TODO: Add more specific API types for ResultSet methods
+  class ResultSet
+    include Enumerable[result_type]
+
+    # Query whether the cursor has reached the end of the result set or not.
+    #
+    # @return [bool] True if end of result set reached
+    def eof?: () -> bool
+
+    # Obtain the next row from the cursor. If there are no more rows to be
+    # had, this will return +nil+.
+    #
+    # The returned value will be an array, unless Database#results_as_hash has
+    # been set to +true+, in which case the returned value will be a hash.
+    #
+    # @return [result_type?] Next row or nil if no more rows
+    def next: () -> result_type?
+
+    # Required by the Enumerable mixin. Provides an internal iterator over the
+    # rows of the result set.
+    #
+    # @yieldparam row [result_type] Each result row
+    # @return [void] When block given
+    # @return [Enumerator[result_type, void]] Enumerator when no block given
+    def each: () { (result_type row) -> void } -> void
+            | () -> Enumerator[result_type, void]
+  end
+end

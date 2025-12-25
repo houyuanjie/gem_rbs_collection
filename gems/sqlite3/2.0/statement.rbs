@@ -1,5 +1,225 @@
 module SQLite3
-  module Statement
-    # TODO: type more ...
+  # A statement represents a prepared-but-unexecuted SQL query. It will rarely
+  # (if ever) be instantiated directly by a client, and is most often obtained
+  # via the Database#prepare method.
+  class Statement
+    include Enumerable[result_type]
+
+    # This is any text that followed the first valid SQL statement in the text
+    # with which the statement was initialized. If there was no trailing text,
+    # this will be the empty string.
+    attr_reader remainder: String
+
+    # Create a new statement attached to the given Database instance, and which
+    # encapsulates the given SQL text. If the text contains more than one
+    # statement (i.e., separated by semicolons), then the #remainder property
+    # will be set to the trailing text.
+    #
+    # @param db [Database] The database instance to attach to
+    # @param sql [String] The SQL statement to prepare
+    def initialize: (Database db, String sql) -> void
+
+    # Returns true if the statement is currently active, meaning it has an
+    # open result set.
+    #
+    # @return [bool] True if active
+    def active?: () -> bool
+
+    # Binds value to the named (or positional) placeholder. If +key+ is an
+    # Integer, it is treated as an index for a positional placeholder.
+    # Otherwise it is used as the name of the placeholder to bind to.
+    #
+    # @param key [Integer | String | Symbol] The parameter index or name
+    # @param value [bind_var_type] The value to bind
+    # @return [self] Returns self for chaining
+    #
+    # See also #bind_params.
+    def bind_param: ((Integer | String | Symbol) key, bind_var_type value) -> self
+
+    # Return the number of bind parameters.
+    #
+    # @return [Integer] Number of bind parameters
+    def bind_parameter_count: () -> Integer
+
+    # Binds the given variables to the corresponding placeholders in the SQL
+    # text. See Database#execute for a description of the valid placeholder
+    # syntaxes.
+    #
+    # @param bind_vars [*bind_var_type] The values to bind
+    # @return [void]
+    #
+    # Example:
+    #   stmt = db.prepare( "select * from table where a=? and b=?" )
+    #   stmt.bind_params( 15, "hello" )
+    #
+    # See also #execute, #bind_param.
+    def bind_params: (*bind_var_type bind_vars) -> void
+                   | (Array[bind_var_type] bind_vars) -> void
+
+    # Clears all bindings from the statement.
+    #
+    # @return [void]
+    def clear_bindings!: () -> void
+
+    # Closes the statement by finalizing the underlying statement
+    # handle. The statement must not be used after being closed.
+    #
+    # @return [void]
+    def close: () -> void
+
+    # Returns true if the statement has been closed.
+    #
+    # @return [bool] True if closed
+    def closed?: () -> bool
+
+    # Returns the number of columns to be returned for this statement.
+    #
+    # @return [Integer] Number of columns
+    def column_count: () -> Integer
+
+    # Get the column type at +index+. 0 based.
+    #
+    # @param index [Integer] Column index (0-based)
+    # @return [String?] Column declaration type or nil
+    def column_decltype: (Integer index) -> String?
+
+    # Get the column name at +index+. 0 based.
+    #
+    # @param index [Integer] Column index (0-based)
+    # @return [String?] Column name or nil
+    def column_name: (Integer index) -> String?
+
+    # Return an array of the column names for this statement. Note that this
+    # may execute the statement in order to obtain the metadata; this makes it
+    # a (potentially) expensive operation.
+    #
+    # @return [Array[String]] Array of column names
+    def columns: () -> Array[String]
+
+    # Return the database name for the column at +column_index+.
+    #
+    # @param column_index [Integer] Column index (0-based)
+    # @return [String?] Database name or nil
+    def database_name: (Integer column_index) -> String?
+
+    # Returns true if all rows have been returned.
+    #
+    # @return [bool] True if done
+    def done?: () -> bool
+
+    # Required by the Enumerable mixin. Provides an internal iterator over the
+    # rows of the result set.
+    #
+    # @yieldparam row [result_type] Each result row
+    # @return [void] When block given
+    # @return [Enumerator[result_type, void]] Enumerator when no block given
+    def each: () { (result_type row) -> void } -> void
+            | () -> Enumerator[result_type, void]
+
+    # Execute the statement. This creates a new ResultSet object for the
+    # statement's virtual machine. If a block was given, the new ResultSet will
+    # be yielded to it; otherwise, the ResultSet will be returned.
+    #
+    # Any parameters will be bound to the statement using #bind_params.
+    #
+    # @param bind_vars [*bind_var_type] Bind variables for placeholders
+    # @yieldparam results [ResultSet] The result set
+    # @return [void] When block given
+    # @return [ResultSet] Result set when no block given
+    #
+    # Example:
+    #   stmt = db.prepare( "select * from table" )
+    #   stmt.execute do |result|
+    #     ...
+    #   end
+    #
+    # See also #bind_params, #execute!.
+    def execute: (*bind_var_type bind_vars) { (ResultSet results) -> void } -> void
+               | (*bind_var_type bind_vars) -> ResultSet
+
+    # Execute the statement. If no block was given, this returns an array of
+    # rows returned by executing the statement. Otherwise, each row will be
+    # yielded to the block.
+    #
+    # Any parameters will be bound to the statement using #bind_params.
+    #
+    # @param bind_vars [*bind_var_type] Bind variables for placeholders
+    # @yieldparam row [result_type] Each result row (Hash or Array)
+    # @return [void] When block given
+    # @return [results_type] All results when no block given
+    #
+    # Example:
+    #   stmt = db.prepare( "select * from table" )
+    #   stmt.execute! do |row|
+    #     ...
+    #   end
+    #
+    # See also #bind_params, #execute.
+    def execute!: (*bind_var_type bind_vars) { (result_type row) -> void } -> void
+                | (*bind_var_type bind_vars) -> results_type
+
+    # Returns the SQL statement used to create this prepared statement, but
+    # with bind parameters substituted in to the statement.
+    #
+    # @return [String] The expanded SQL statement with bound parameters
+    def expanded_sql: () -> String
+
+    # Return the approximate number of bytes of heap memory used to store the prepared statement.
+    #
+    # @return [Integer] Memory usage in bytes
+    def memused: () -> Integer
+
+    # Resets the statement. This is typically done internally, though it might
+    # occasionally be necessary to manually reset the statement.
+    #
+    # @return [void]
+    def reset!: () -> void
+
+    # Returns the SQL statement used to create this prepared statement.
+    #
+    # @return [String] The original SQL statement
+    def sql: () -> String
+
+    # Returns a Hash containing information about the statement.
+    # The contents of the hash are implementation specific and may change in
+    # the future without notice. The hash includes information about internal
+    # statistics about the statement such as:
+    #   - +fullscan_steps+: the number of times that SQLite has stepped forward
+    # in a table as part of a full table scan
+    #   - +sorts+: the number of sort operations that have occurred
+    #   - +autoindexes+: the number of rows inserted into transient indices
+    # that were created automatically in order to help joins run faster
+    #   - +vm_steps+: the number of virtual machine operations executed by the
+    # prepared statement
+    #   - +reprepares+: the number of times that the prepare statement has been
+    # automatically regenerated due to schema changes or changes to bound
+    # parameters that might affect the query plan
+    #   - +runs+: the number of times that the prepared statement has been run
+    #   - +filter_misses+: the number of times that the Bloom filter returned
+    # a find, and thus the join step had to be processed as normal
+    #   - +filter_hits+: the number of times that a join step was bypassed
+    # because a Bloom filter returned not-found
+    #
+    # @param key [Symbol?] Optional specific statistic key
+    # @return [Hash[Symbol, Integer]] All statistics when no key given
+    # @return [Integer] Specific statistic value when key given
+    def stat: () -> Hash[Symbol, Integer]
+            | (Symbol key) -> Integer
+
+    # Obtain the next row from the cursor. If there are no more rows to be
+    # had, this will return +nil+.
+    #
+    # The returned value will be an array, unless Database#results_as_hash has
+    # been set to +true+, in which case the returned value will be a hash.
+    #
+    # @return [result_type?] Next row or nil if no more rows
+    def step: () -> result_type?
+
+    # Return an array of the data types for each column in this statement. Note
+    # that this may execute the statement in order to obtain the metadata; this
+    # makes it a (potentially) expensive operation.
+    #
+    # @return [Array[String?]] Array of column types (may be nil)
+    def types: () -> Array[String?]
   end
 end
